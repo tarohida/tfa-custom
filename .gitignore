@@ -1,0 +1,17 @@
+# IDE
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Composer
+/vendor/
+composer.lock
+
+# PHPUnit
+/phpunit.xml
+/.phpunit.result.cache

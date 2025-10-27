@@ -1,0 +1,5 @@
+tfa_custom.settings:
+  title: 'Custom設定'
+  route_name: tfa_custom.settings
+  base_route: tfa.settings
+  weight: 10

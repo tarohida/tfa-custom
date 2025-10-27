@@ -1,0 +1,36 @@
+{
+  "name": "tarohida/tfa-custom",
+  "type": "drupal-module",
+  "description": "TFAモジュールのカスタマイズ - ログイン後のリダイレクト先指定とメール送信制御機能を追加",
+  "keywords": ["drupal", "tfa", "two-factor-authentication", "security"],
+  "homepage": "https://github.com/tarohida/tfa-custom",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "tarohida",
+      "homepage": "https://github.com/tarohida"
+    }
+  ],
+  "support": {
+    "issues": "https://github.com/tarohida/tfa-custom/issues",
+    "source": "https://github.com/tarohida/tfa-custom"
+  },
+  "require": {
+    "php": ">=8.1",
+    "drupal/core": "^10 || ^11",
+    "drupal/tfa": "^1.0"
+  },
+  "require-dev": {
+    "drupal/core-dev": "^10 || ^11"
+  },
+  "autoload": {
+    "psr-4": {
+      "Drupal\\tfa_custom\\": "src/"
+    }
+  },
+  "extra": {
+    "drupal": {
+      "version": "1.0.0"
+    }
+  }
+}

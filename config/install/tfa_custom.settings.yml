@@ -1,0 +1,3 @@
+redirect_after_login: '<front>'
+send_email_on_enable: true
+send_email_on_disable: true

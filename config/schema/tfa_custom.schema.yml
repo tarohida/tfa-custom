@@ -1,0 +1,13 @@
+tfa_custom.settings:
+  type: config_object
+  label: 'TFA Custom settings'
+  mapping:
+    redirect_after_login:
+      type: string
+      label: 'ログイン後のリダイレクト先'
+    send_email_on_enable:
+      type: boolean
+      label: 'TFA有効化時にメールを送信'
+    send_email_on_disable:
+      type: boolean
+      label: 'TFA無効化時にメールを送信'

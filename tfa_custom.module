@@ -1,0 +1,119 @@
+<?php
+
+/**
+ * @file
+ * TFA Customモジュール - TFAのリダイレクトとメール送信をカスタマイズ。
+ */
+
+use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Url;
+
+/**
+ * Implements hook_form_FORM_ID_alter() for tfa_entry_form.
+ *
+ * TFAログイン後のリダイレクト先をカスタマイズ。
+ */
+function tfa_custom_form_tfa_entry_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  // カスタムsubmitハンドラーを追加してリダイレクトを制御。
+  $form['#submit'][] = 'tfa_custom_entry_form_submit';
+}
+
+/**
+ * カスタムsubmitハンドラー: TFAログイン後のリダイレクト。
+ */
+function tfa_custom_entry_form_submit(array &$form, FormStateInterface $form_state) {
+  $config = \Drupal::config('tfa_custom.settings');
+  $redirect_path = $config->get('redirect_after_login') ?: '<front>';
+
+  // パスワードリセットトークンがある場合は元のリダイレクトを維持。
+  $token = \Drupal::request()->get('pass-reset-token');
+  if (!$token) {
+    // カスタムリダイレクト先を設定。
+    if ($redirect_path === '<front>') {
+      $form_state->setRedirect('<front>');
+    }
+    else {
+      // 相対パスから絶対URLを生成。
+      try {
+        $url = Url::fromUserInput($redirect_path);
+        $form_state->setRedirectUrl($url);
+      }
+      catch (\Exception $e) {
+        // 無効なパスの場合はフロントページにリダイレクト。
+        \Drupal::logger('tfa_custom')->error('Invalid redirect path: @path', ['@path' => $redirect_path]);
+        $form_state->setRedirect('<front>');
+      }
+    }
+  }
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter() for tfa_setup_form.
+ *
+ * TFA有効化時のメール送信を制御。
+ */
+function tfa_custom_form_tfa_setup_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  // カスタムsubmitハンドラーを最初に追加してメール送信を制御。
+  array_unshift($form['#submit'], 'tfa_custom_setup_form_submit');
+}
+
+/**
+ * カスタムsubmitハンドラー: TFA有効化時のメール送信制御。
+ */
+function tfa_custom_setup_form_submit(array &$form, FormStateInterface $form_state) {
+  $config = \Drupal::config('tfa_custom.settings');
+  $send_email = $config->get('send_email_on_enable') ?? TRUE;
+
+  // メール送信を無効にする場合、一時的にフラグを設定。
+  if (!$send_email) {
+    \Drupal::state()->set('tfa_custom.suppress_enable_email', TRUE);
+  }
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter() for tfa_disable_form.
+ *
+ * TFA無効化時のメール送信を制御。
+ */
+function tfa_custom_form_tfa_disable_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  // カスタムsubmitハンドラーを最初に追加してメール送信を制御。
+  array_unshift($form['#submit'], 'tfa_custom_disable_form_submit');
+}
+
+/**
+ * カスタムsubmitハンドラー: TFA無効化時のメール送信制御。
+ */
+function tfa_custom_disable_form_submit(array &$form, FormStateInterface $form_state) {
+  $config = \Drupal::config('tfa_custom.settings');
+  $send_email = $config->get('send_email_on_disable') ?? TRUE;
+
+  // メール送信を無効にする場合、一時的にフラグを設定。
+  if (!$send_email) {
+    \Drupal::state()->set('tfa_custom.suppress_disable_email', TRUE);
+  }
+}
+
+/**
+ * Implements hook_mail_alter().
+ *
+ * TFAのメール送信を制御。
+ */
+function tfa_custom_mail_alter(&$message) {
+  // TFA有効化メールの制御。
+  if ($message['module'] === 'tfa' && $message['key'] === 'tfa_enabled_configuration') {
+    if (\Drupal::state()->get('tfa_custom.suppress_enable_email')) {
+      // メール送信を抑制。
+      $message['send'] = FALSE;
+      \Drupal::state()->delete('tfa_custom.suppress_enable_email');
+    }
+  }
+
+  // TFA無効化メールの制御。
+  if ($message['module'] === 'tfa' && $message['key'] === 'tfa_disabled_configuration') {
+    if (\Drupal::state()->get('tfa_custom.suppress_disable_email')) {
+      // メール送信を抑制。
+      $message['send'] = FALSE;
+      \Drupal::state()->delete('tfa_custom.suppress_disable_email');
+    }
+  }
+}

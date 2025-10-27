@@ -1,0 +1,7 @@
+tfa_custom.settings:
+  path: '/admin/config/people/tfa/custom'
+  defaults:
+    _form: '\Drupal\tfa_custom\Form\TfaCustomSettingsForm'
+    _title: 'TFA Custom設定'
+  requirements:
+    _permission: 'administer tfa'
