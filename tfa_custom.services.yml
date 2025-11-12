@@ -1,6 +1,0 @@
-services:
-  tfa_custom.redirect_subscriber:
-    class: Drupal\tfa_custom\EventSubscriber\TfaCustomRedirectSubscriber
-    arguments: ['@config.factory']
-    tags:
-      - { name: event_subscriber }

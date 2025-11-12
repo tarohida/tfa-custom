@@ -6,35 +6,44 @@
  */
 
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Url;
 
 /**
- * Implements hook_form_alter().
+ * Implements hook_form_FORM_ID_alter() for tfa_entry_form.
  *
- * ログインフォームに destination パラメータを追加してリダイレクトを制御。
+ * TFAログイン後のリダイレクト先をカスタマイズ。
  */
-function tfa_custom_form_alter(&$form, FormStateInterface $form_state, $form_id) {
-  // user_login_form のみに適用（TFA無効時のログイン用）。
-  // TFA有効時は EventSubscriber が処理。
-  if ($form_id === 'user_login_form') {
-    $config = \Drupal::config('tfa_custom.settings');
-    $redirect_path = $config->get('redirect_after_login') ?: '<front>';
+function tfa_custom_form_tfa_entry_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  // カスタムsubmitハンドラーを追加してリダイレクトを制御。
+  $form['#submit'][] = 'tfa_custom_entry_form_submit';
+}
 
-    // パスワードリセットトークンがある場合は何もしない。
-    $token = \Drupal::request()->get('pass-reset-token');
-    if ($token) {
-      return;
-    }
+/**
+ * カスタムsubmitハンドラー: TFAログイン後のリダイレクト。
+ */
+function tfa_custom_entry_form_submit(array &$form, FormStateInterface $form_state) {
+  $config = \Drupal::config('tfa_custom.settings');
+  $redirect_path = $config->get('redirect_after_login') ?: '<front>';
 
-    // デフォルト設定の場合は何もしない（Drupalのデフォルト動作を使用）。
+  // パスワードリセットトークンがある場合は元のリダイレクトを維持。
+  $token = \Drupal::request()->get('pass-reset-token');
+  if (!$token) {
+    // カスタムリダイレクト先を設定。
     if ($redirect_path === '<front>') {
-      return;
+      $form_state->setRedirect('<front>');
     }
-
-    // destination hidden フィールドを追加（Drupalが自動的に処理）。
-    $form['destination'] = [
-      '#type' => 'hidden',
-      '#value' => $redirect_path,
-    ];
+    else {
+      // 相対パスから絶対URLを生成。
+      try {
+        $url = Url::fromUserInput($redirect_path);
+        $form_state->setRedirectUrl($url);
+      }
+      catch (\Exception $e) {
+        // 無効なパスの場合はフロントページにリダイレクト。
+        \Drupal::logger('tfa_custom')->error('Invalid redirect path: @path', ['@path' => $redirect_path]);
+        $form_state->setRedirect('<front>');
+      }
+    }
   }
 }
 
