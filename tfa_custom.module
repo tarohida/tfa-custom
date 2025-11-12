@@ -27,23 +27,33 @@ function tfa_custom_entry_form_submit(array &$form, FormStateInterface $form_sta
 
   // パスワードリセットトークンがある場合は元のリダイレクトを維持。
   $token = \Drupal::request()->get('pass-reset-token');
-  if (!$token) {
-    // カスタムリダイレクト先を設定。
-    if ($redirect_path === '<front>') {
-      $form_state->setRedirect('<front>');
-    }
-    else {
-      // 相対パスから絶対URLを生成。
-      try {
-        $url = Url::fromUserInput($redirect_path);
-        $form_state->setRedirectUrl($url);
-      }
-      catch (\Exception $e) {
-        // 無効なパスの場合はフロントページにリダイレクト。
-        \Drupal::logger('tfa_custom')->error('Invalid redirect path: @path', ['@path' => $redirect_path]);
-        $form_state->setRedirect('<front>');
-      }
-    }
+  if ($token) {
+    return;
+  }
+
+  // デフォルト設定（<front>）の場合は何もしない（他のモジュールの設定を維持）。
+  if ($redirect_path === '<front>') {
+    return;
+  }
+
+  // 既に他のモジュールがリダイレクト先を設定している場合は維持。
+  if ($form_state->getRedirect()) {
+    \Drupal::logger('tfa_custom')->info('Existing redirect found, keeping it.');
+    return;
+  }
+
+  // カスタムリダイレクト先を設定。
+  try {
+    $url = Url::fromUserInput($redirect_path);
+    $form_state->setRedirectUrl($url);
+    \Drupal::logger('tfa_custom')->info('Custom redirect set: @path', ['@path' => $redirect_path]);
+  }
+  catch (\Exception $e) {
+    // 無効なパスの場合はログのみ記録（他のモジュールの設定を維持）。
+    \Drupal::logger('tfa_custom')->error('Invalid redirect path: @path. Error: @error', [
+      '@path' => $redirect_path,
+      '@error' => $e->getMessage(),
+    ]);
   }
 }
 
