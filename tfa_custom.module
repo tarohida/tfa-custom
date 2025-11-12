@@ -5,55 +5,45 @@
  * TFA Customモジュール - TFAのリダイレクトとメール送信をカスタマイズ。
  */
 
+use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Url;
-use Symfony\Component\HttpFoundation\RedirectResponse;
-use Drupal\user\UserInterface;
 
 /**
- * Implements hook_user_login().
+ * Implements hook_form_FORM_ID_alter() for tfa_entry_form.
  *
- * ログイン成功後（TFA検証後を含む）のリダイレクト先をカスタマイズ。
+ * TFAログイン後のリダイレクト先をカスタマイズ。
  */
-function tfa_custom_user_login(UserInterface $account) {
+function tfa_custom_form_tfa_entry_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  // カスタムsubmitハンドラーを追加してリダイレクトを制御。
+  $form['#submit'][] = 'tfa_custom_entry_form_submit';
+}
+
+/**
+ * カスタムsubmitハンドラー: TFAログイン後のリダイレクト。
+ */
+function tfa_custom_entry_form_submit(array &$form, FormStateInterface $form_state) {
   $config = \Drupal::config('tfa_custom.settings');
   $redirect_path = $config->get('redirect_after_login') ?: '<front>';
 
-  // パスワードリセットトークンがある場合はリダイレクトしない。
+  // パスワードリセットトークンがある場合は元のリダイレクトを維持。
   $token = \Drupal::request()->get('pass-reset-token');
-  if ($token) {
-    return;
-  }
-
-  // デフォルト設定の場合は何もしない（Drupalのデフォルト動作を使用）。
-  if ($redirect_path === '<front>') {
-    return;
-  }
-
-  // カスタムリダイレクト先を設定。
-  try {
-    $url = Url::fromUserInput($redirect_path);
-
-    // ルートが存在するか確認。
-    try {
-      $route_provider = \Drupal::service('router.route_provider');
-      $route_provider->getRouteByName($url->getRouteName());
+  if (!$token) {
+    // カスタムリダイレクト先を設定。
+    if ($redirect_path === '<front>') {
+      $form_state->setRedirect('<front>');
     }
-    catch (\Exception $route_exception) {
-      // ルート名で確認できない場合、パスベースで確認。
-      // 無効なパスの場合は例外がスローされる。
+    else {
+      // 相対パスから絶対URLを生成。
+      try {
+        $url = Url::fromUserInput($redirect_path);
+        $form_state->setRedirectUrl($url);
+      }
+      catch (\Exception $e) {
+        // 無効なパスの場合はフロントページにリダイレクト。
+        \Drupal::logger('tfa_custom')->error('Invalid redirect path: @path', ['@path' => $redirect_path]);
+        $form_state->setRedirect('<front>');
+      }
     }
-
-    // リダイレクトを実行。
-    $response = new RedirectResponse($url->toString());
-    $response->send();
-    exit;
-  }
-  catch (\Exception $e) {
-    // 無効なパスの場合はログに記録し、デフォルト動作を使用。
-    \Drupal::logger('tfa_custom')->error('Invalid redirect path: @path. Error: @error. Using default redirect.', [
-      '@path' => $redirect_path,
-      '@error' => $e->getMessage(),
-    ]);
   }
 }
 
