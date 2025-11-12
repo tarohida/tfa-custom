@@ -12,48 +12,95 @@ use Drupal\Core\Url;
  * Implements hook_form_FORM_ID_alter() for tfa_entry_form.
  *
  * TFAログイン後のリダイレクト先をカスタマイズ。
+ * TFA モジュールが他のモジュールのリダイレクト設定を上書きしてしまう問題を解決。
  */
 function tfa_custom_form_tfa_entry_form_alter(&$form, FormStateInterface $form_state, $form_id) {
-  // カスタムsubmitハンドラーを追加してリダイレクトを制御。
-  $form['#submit'][] = 'tfa_custom_entry_form_submit';
+  // TFA の元の submit ハンドラーをラップして、リダイレクト情報を保存・復元。
+  if (isset($form['#submit'])) {
+    $original_submits = $form['#submit'];
+    $form['#submit'] = [];
+
+    // 1. TFA 実行前にリダイレクトを保存。
+    $form['#submit'][] = 'tfa_custom_save_redirect';
+
+    // 2. 元の submit ハンドラー（TFA のもの）を実行。
+    foreach ($original_submits as $submit) {
+      $form['#submit'][] = $submit;
+    }
+
+    // 3. TFA 実行後にリダイレクトを復元・カスタマイズ。
+    $form['#submit'][] = 'tfa_custom_restore_redirect';
+  }
 }
 
 /**
- * カスタムsubmitハンドラー: TFAログイン後のリダイレクト。
+ * TFA 実行前にリダイレクトを保存。
+ *
+ * 他のモジュール（Login Destination など）が設定したリダイレクト先を保存し、
+ * TFA による上書きから保護する。
  */
-function tfa_custom_entry_form_submit(array &$form, FormStateInterface $form_state) {
-  $config = \Drupal::config('tfa_custom.settings');
-  $redirect_path = $config->get('redirect_after_login') ?: '<front>';
+function tfa_custom_save_redirect(array &$form, FormStateInterface $form_state) {
+  $redirect = $form_state->getRedirect();
+  if ($redirect) {
+    // FormState に保存（TFA 実行後に復元可能にする）。
+    $form_state->set('tfa_custom_original_redirect', $redirect);
+    \Drupal::logger('tfa_custom')->debug('Saved original redirect before TFA processing');
+  }
+}
 
-  // パスワードリセットトークンがある場合は元のリダイレクトを維持。
+/**
+ * TFA 実行後にリダイレクトを復元・カスタマイズ。
+ *
+ * TFA が <front> に上書きした場合、以下の優先順位でリダイレクト先を決定：
+ * 1. パスワードリセット時 → TFA の元の動作を維持
+ * 2. 他のモジュールの設定 → 保存したリダイレクト先を復元
+ * 3. tfa_custom の設定 → 管理画面で設定したパス
+ * 4. デフォルト → <front>（TFA の動作を維持）
+ */
+function tfa_custom_restore_redirect(array &$form, FormStateInterface $form_state) {
+  $config = \Drupal::config('tfa_custom.settings');
+  $custom_redirect_path = $config->get('redirect_after_login') ?: '<front>';
+
+  // パスワードリセットトークンがある場合は TFA の元の動作を維持。
   $token = \Drupal::request()->get('pass-reset-token');
   if ($token) {
+    \Drupal::logger('tfa_custom')->debug('Password reset detected, keeping TFA redirect');
     return;
   }
 
-  // デフォルト設定（<front>）の場合は何もしない（他のモジュールの設定を維持）。
-  if ($redirect_path === '<front>') {
-    return;
-  }
+  // TFA が設定したリダイレクトを取得。
+  $tfa_redirect = $form_state->getRedirect();
 
-  // 既に他のモジュールがリダイレクト先を設定している場合は維持。
-  if ($form_state->getRedirect()) {
-    \Drupal::logger('tfa_custom')->info('Existing redirect found, keeping it.');
-    return;
-  }
+  // TFA が '<front>' を設定した場合のみ介入。
+  if ($tfa_redirect && $tfa_redirect->getRouteName() === '<front>') {
+    // 優先度1: 元々保存されていたリダイレクト（他のモジュールの設定）。
+    $original_redirect = $form_state->get('tfa_custom_original_redirect');
+    if ($original_redirect) {
+      $form_state->setRedirectUrl($original_redirect);
+      \Drupal::logger('tfa_custom')->info('Restored original redirect from other modules');
+      return;
+    }
 
-  // カスタムリダイレクト先を設定。
-  try {
-    $url = Url::fromUserInput($redirect_path);
-    $form_state->setRedirectUrl($url);
-    \Drupal::logger('tfa_custom')->info('Custom redirect set: @path', ['@path' => $redirect_path]);
+    // 優先度2: tfa_custom の設定が '<front>' 以外なら適用。
+    if ($custom_redirect_path !== '<front>') {
+      try {
+        $url = Url::fromUserInput($custom_redirect_path);
+        $form_state->setRedirectUrl($url);
+        \Drupal::logger('tfa_custom')->info('Applied custom redirect: @path', ['@path' => $custom_redirect_path]);
+      }
+      catch (\Exception $e) {
+        \Drupal::logger('tfa_custom')->error('Invalid redirect path: @path. Error: @error', [
+          '@path' => $custom_redirect_path,
+          '@error' => $e->getMessage(),
+        ]);
+      }
+    }
+    else {
+      \Drupal::logger('tfa_custom')->debug('No custom redirect configured, keeping TFA default (<front>)');
+    }
   }
-  catch (\Exception $e) {
-    // 無効なパスの場合はログのみ記録（他のモジュールの設定を維持）。
-    \Drupal::logger('tfa_custom')->error('Invalid redirect path: @path. Error: @error', [
-      '@path' => $redirect_path,
-      '@error' => $e->getMessage(),
-    ]);
+  else {
+    \Drupal::logger('tfa_custom')->debug('TFA set non-front redirect, keeping it');
   }
 }
 
