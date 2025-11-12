@@ -9,6 +9,16 @@ use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Url;
 
 /**
+ * Implements hook_form_FORM_ID_alter() for user_login_form.
+ *
+ * 通常ログイン後のリダイレクト先をカスタマイズ。
+ */
+function tfa_custom_form_user_login_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  // カスタムsubmitハンドラーを追加してリダイレクトを制御。
+  $form['#submit'][] = 'tfa_custom_login_form_submit';
+}
+
+/**
  * Implements hook_form_FORM_ID_alter() for tfa_entry_form.
  *
  * TFAログイン後のリダイレクト先をカスタマイズ。
@@ -19,9 +29,26 @@ function tfa_custom_form_tfa_entry_form_alter(&$form, FormStateInterface $form_s
 }
 
 /**
+ * カスタムsubmitハンドラー: 通常ログイン後のリダイレクト。
+ */
+function tfa_custom_login_form_submit(array &$form, FormStateInterface $form_state) {
+  _tfa_custom_set_redirect($form_state);
+}
+
+/**
  * カスタムsubmitハンドラー: TFAログイン後のリダイレクト。
  */
 function tfa_custom_entry_form_submit(array &$form, FormStateInterface $form_state) {
+  _tfa_custom_set_redirect($form_state);
+}
+
+/**
+ * リダイレクト先を設定するヘルパー関数。
+ *
+ * @param \Drupal\Core\Form\FormStateInterface $form_state
+ *   フォームの状態オブジェクト。
+ */
+function _tfa_custom_set_redirect(FormStateInterface $form_state) {
   $config = \Drupal::config('tfa_custom.settings');
   $redirect_path = $config->get('redirect_after_login') ?: '<front>';
 
