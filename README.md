@@ -11,7 +11,6 @@ Drupal の Two-Factor Authentication (TFA) モジュールの動作をカスタ�
 
 - **ログイン後のリダイレクト先を自由に設定** - TFA 検証後の遷移先を管理画面から指定可能
 - **メール送信の制御** - TFA 有効化/無効化時のメール通知を個別に ON/OFF 可能
-- **エラーメッセージの日本語対応** - TFA のエラーメッセージ内の時間表記を自動的に日本語化
 
 ## 主な機能
 
@@ -29,14 +28,6 @@ TFA の有効化/無効化時に送信される通知メールを個別に制御
 
 - TFA 有効化時のメール送信: ON/OFF 可能
 - TFA 無効化時のメール送信: ON/OFF 可能
-
-### 3. エラーメッセージの日本語対応
-
-TFA のエラーメッセージに含まれる時間表記を自動的に日本語に変換します。
-
-- 変換例: "5 min" → "5分", "10 sec" → "10秒"
-- 日本語ロケール（ja）の場合のみ自動適用
-- Flood 制御のエラーメッセージなどが対象
 
 ## 要件
 
@@ -129,7 +120,6 @@ drush cr
 
 - **リダイレクト制御**: `hook_form_alter()` で TFA エントリーフォームにカスタム submit ハンドラーを追加
 - **メール送信制御**: `hook_mail_alter()` でメール送信を動的に抑制
-- **エラーメッセージ日本語化**: カスタム validate ハンドラーで時間表記を正規表現で変換
 - **設定管理**: Drupal Configuration API を使用（`tfa_custom.settings`）
 
 ### ディレクトリ構成
@@ -169,6 +159,21 @@ drush cr
 
 ```bash
 drush watchdog:show --type=tfa_custom
+```
+
+## 関連モジュール
+
+### TFA Message Japanese
+
+TFA のエラーメッセージを日本語に対応させるモジュール：
+
+- [tfa_message_ja](https://github.com/tarohida/tfa-message-ja)
+- TFA エラーメッセージ内の時間表記を自動的に日本語化（"5 min" → "5分"）
+- このモジュールと併用することで、より快適な日本語環境を実現
+
+```bash
+composer require tarohida/tfa-message-ja
+drush en tfa_message_ja -y
 ```
 
 ## セキュリティ上の注意

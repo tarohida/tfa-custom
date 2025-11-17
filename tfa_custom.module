@@ -7,79 +7,15 @@
 
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Url;
-use Drupal\Component\Render\FormattableMarkup;
 
 /**
  * Implements hook_form_FORM_ID_alter() for tfa_entry_form.
  *
  * TFAログイン後のリダイレクト先をカスタマイズ。
- * エラーメッセージの日本語対応（時間表記の修正）。
  */
 function tfa_custom_form_tfa_entry_form_alter(&$form, FormStateInterface $form_state, $form_id) {
   // カスタムsubmitハンドラーを追加してリダイレクトを制御。
   $form['#submit'][] = 'tfa_custom_entry_form_submit';
-
-  // エラーメッセージの日本語対応のため、バリデーション後に処理。
-  $form['#validate'][] = 'tfa_custom_fix_error_messages';
-}
-
-/**
- * カスタムバリデーションハンドラー: エラーメッセージの日本語対応。
- *
- * TFA のエラーメッセージ内の英語時間表記（例: "5 min", "10 sec"）を
- * 日本語表記（例: "5分", "10秒"）に変換。
- */
-function tfa_custom_fix_error_messages(array &$form, FormStateInterface $form_state) {
-  $errors = $form_state->getErrors();
-  if (empty($errors)) {
-    return;
-  }
-
-  // 日本語ロケールの場合のみ処理。
-  $current_language = \Drupal::languageManager()->getCurrentLanguage()->getId();
-  if ($current_language !== 'ja') {
-    return;
-  }
-
-  // エラーメッセージを修正。
-  $modified_errors = [];
-  foreach ($errors as $name => $message) {
-    $original_message = (string) $message;
-
-    // 英語の時間表記を日本語に変換。
-    $new_message = preg_replace_callback(
-      '/(\d+)\s*(year|month|week|day|hour|min|sec)s?/',
-      function ($matches) {
-        $number = $matches[1];
-        $unit = $matches[2];
-
-        // 単位を日本語に変換。
-        $units_map = [
-          'year' => '年',
-          'month' => 'ヶ月',
-          'week' => '週間',
-          'day' => '日',
-          'hour' => '時間',
-          'min' => '分',
-          'sec' => '秒',
-        ];
-
-        return $number . ($units_map[$unit] ?? $unit);
-      },
-      $original_message
-    );
-
-    // FormattableMarkupとして設定することでHTMLタグが適切にレンダリングされる。
-    $modified_errors[$name] = new FormattableMarkup($new_message, []);
-  }
-
-  // 変更があった場合のみ再設定。
-  if ($modified_errors !== $errors) {
-    $form_state->clearErrors();
-    foreach ($modified_errors as $name => $message) {
-      $form_state->setErrorByName($name, $message);
-    }
-  }
 }
 
 /**

@@ -1,7 +1,7 @@
 {
   "name": "tarohida/tfa-custom",
   "type": "drupal-module",
-  "description": "TFAモジュールのカスタマイズ - ログイン後のリダイレクト先指定とメール送信制御機能を追加",
+  "description": "TFAモジュールのカスタマイズ - ログイン後のリダイレクト先指定とメール送信制御",
   "keywords": ["drupal", "tfa", "two-factor-authentication", "security"],
   "homepage": "https://github.com/tarohida/tfa-custom",
   "license": "MIT",
