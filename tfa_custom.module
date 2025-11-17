@@ -7,6 +7,7 @@
 
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Url;
+use Drupal\Component\Render\FormattableMarkup;
 
 /**
  * Implements hook_form_FORM_ID_alter() for tfa_entry_form.
@@ -68,7 +69,8 @@ function tfa_custom_fix_error_messages(array &$form, FormStateInterface $form_st
       $original_message
     );
 
-    $modified_errors[$name] = $new_message;
+    // FormattableMarkupとして設定することでHTMLタグが適切にレンダリングされる。
+    $modified_errors[$name] = new FormattableMarkup($new_message, []);
   }
 
   // 変更があった場合のみ再設定。
