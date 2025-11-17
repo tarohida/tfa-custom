@@ -12,95 +12,146 @@ use Drupal\Core\Url;
  * Implements hook_form_FORM_ID_alter() for tfa_entry_form.
  *
  * TFAログイン後のリダイレクト先をカスタマイズ。
- * TFA モジュールが他のモジュールのリダイレクト設定を上書きしてしまう問題を解決。
+ * エラーメッセージの日本語対応（時間表記の修正）。
  */
 function tfa_custom_form_tfa_entry_form_alter(&$form, FormStateInterface $form_state, $form_id) {
-  // TFA の元の submit ハンドラーをラップして、リダイレクト情報を保存・復元。
-  if (isset($form['#submit'])) {
-    $original_submits = $form['#submit'];
-    $form['#submit'] = [];
+  // カスタムsubmitハンドラーを追加してリダイレクトを制御。
+  $form['#submit'][] = 'tfa_custom_entry_form_submit';
 
-    // 1. TFA 実行前にリダイレクトを保存。
-    $form['#submit'][] = 'tfa_custom_save_redirect';
-
-    // 2. 元の submit ハンドラー（TFA のもの）を実行。
-    foreach ($original_submits as $submit) {
-      $form['#submit'][] = $submit;
-    }
-
-    // 3. TFA 実行後にリダイレクトを復元・カスタマイズ。
-    $form['#submit'][] = 'tfa_custom_restore_redirect';
-  }
+  // エラーメッセージの日本語対応のため、バリデーション後に処理。
+  $form['#validate'][] = 'tfa_custom_fix_error_messages';
 }
 
 /**
- * TFA 実行前にリダイレクトを保存。
+ * カスタムバリデーションハンドラー: エラーメッセージの日本語対応。
  *
- * 他のモジュール（Login Destination など）が設定したリダイレクト先を保存し、
- * TFA による上書きから保護する。
+ * TFA のエラーメッセージ内の英語時間表記（例: "5 min", "10 sec"）を
+ * 日本語表記（例: "5分", "10秒"）に変換。
  */
-function tfa_custom_save_redirect(array &$form, FormStateInterface $form_state) {
-  $redirect = $form_state->getRedirect();
-  if ($redirect) {
-    // FormState に保存（TFA 実行後に復元可能にする）。
-    $form_state->set('tfa_custom_original_redirect', $redirect);
-    \Drupal::logger('tfa_custom')->debug('Saved original redirect before TFA processing');
-  }
-}
-
-/**
- * TFA 実行後にリダイレクトを復元・カスタマイズ。
- *
- * TFA が <front> に上書きした場合、以下の優先順位でリダイレクト先を決定：
- * 1. パスワードリセット時 → TFA の元の動作を維持
- * 2. 他のモジュールの設定 → 保存したリダイレクト先を復元
- * 3. tfa_custom の設定 → 管理画面で設定したパス
- * 4. デフォルト → <front>（TFA の動作を維持）
- */
-function tfa_custom_restore_redirect(array &$form, FormStateInterface $form_state) {
-  $config = \Drupal::config('tfa_custom.settings');
-  $custom_redirect_path = $config->get('redirect_after_login') ?: '<front>';
-
-  // パスワードリセットトークンがある場合は TFA の元の動作を維持。
-  $token = \Drupal::request()->get('pass-reset-token');
-  if ($token) {
-    \Drupal::logger('tfa_custom')->debug('Password reset detected, keeping TFA redirect');
+function tfa_custom_fix_error_messages(array &$form, FormStateInterface $form_state) {
+  $errors = $form_state->getErrors();
+  if (empty($errors)) {
     return;
   }
 
-  // TFA が設定したリダイレクトを取得。
-  $tfa_redirect = $form_state->getRedirect();
+  // 日本語ロケールの場合のみ処理。
+  $current_language = \Drupal::languageManager()->getCurrentLanguage()->getId();
+  if ($current_language !== 'ja') {
+    return;
+  }
 
-  // TFA が '<front>' を設定した場合のみ介入。
-  if ($tfa_redirect && $tfa_redirect->getRouteName() === '<front>') {
-    // 優先度1: 元々保存されていたリダイレクト（他のモジュールの設定）。
-    $original_redirect = $form_state->get('tfa_custom_original_redirect');
-    if ($original_redirect) {
-      $form_state->setRedirectUrl($original_redirect);
-      \Drupal::logger('tfa_custom')->info('Restored original redirect from other modules');
-      return;
-    }
+  // エラーメッセージを修正。
+  $modified_errors = [];
+  foreach ($errors as $name => $message) {
+    $original_message = (string) $message;
 
-    // 優先度2: tfa_custom の設定が '<front>' 以外なら適用。
-    if ($custom_redirect_path !== '<front>') {
-      try {
-        $url = Url::fromUserInput($custom_redirect_path);
-        $form_state->setRedirectUrl($url);
-        \Drupal::logger('tfa_custom')->info('Applied custom redirect: @path', ['@path' => $custom_redirect_path]);
-      }
-      catch (\Exception $e) {
-        \Drupal::logger('tfa_custom')->error('Invalid redirect path: @path. Error: @error', [
-          '@path' => $custom_redirect_path,
-          '@error' => $e->getMessage(),
-        ]);
-      }
-    }
-    else {
-      \Drupal::logger('tfa_custom')->debug('No custom redirect configured, keeping TFA default (<front>)');
+    // 英語の時間表記を日本語に変換。
+    $new_message = preg_replace_callback(
+      '/(\d+)\s*(year|month|week|day|hour|min|sec)s?/',
+      function ($matches) {
+        $number = $matches[1];
+        $unit = $matches[2];
+
+        // 単位を日本語に変換。
+        $units_map = [
+          'year' => '年',
+          'month' => 'ヶ月',
+          'week' => '週間',
+          'day' => '日',
+          'hour' => '時間',
+          'min' => '分',
+          'sec' => '秒',
+        ];
+
+        return $number . ($units_map[$unit] ?? $unit);
+      },
+      $original_message
+    );
+
+    $modified_errors[$name] = $new_message;
+  }
+
+  // 変更があった場合のみ再設定。
+  if ($modified_errors !== $errors) {
+    $form_state->clearErrors();
+    foreach ($modified_errors as $name => $message) {
+      $form_state->setErrorByName($name, $message);
     }
   }
-  else {
-    \Drupal::logger('tfa_custom')->debug('TFA set non-front redirect, keeping it');
+}
+
+/**
+ * カスタムsubmitハンドラー: TFAログイン後のリダイレクト。
+ */
+function tfa_custom_entry_form_submit(array &$form, FormStateInterface $form_state) {
+  $config = \Drupal::config('tfa_custom.settings');
+  $redirect_path = $config->get('redirect_after_login') ?: '<front>';
+
+  // パスワードリセットトークンがある場合は元のリダイレクトを維持。
+  $token = \Drupal::request()->get('pass-reset-token');
+  if (!$token) {
+    // カスタムリダイレクト先を設定。
+    if ($redirect_path === '<front>') {
+      $form_state->setRedirect('<front>');
+    }
+    else {
+      // 相対パスから絶対URLを生成。
+      try {
+        $url = Url::fromUserInput($redirect_path);
+        $form_state->setRedirectUrl($url);
+      }
+      catch (\Exception $e) {
+        // 無効なパスの場合はフロントページにリダイレクト。
+        \Drupal::logger('tfa_custom')->error('Invalid redirect path: @path', ['@path' => $redirect_path]);
+        $form_state->setRedirect('<front>');
+      }
+    }
+  }
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter() for tfa_setup_form.
+ *
+ * TFA有効化時のメール送信を制御。
+ */
+function tfa_custom_form_tfa_setup_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  // カスタムsubmitハンドラーを最初に追加してメール送信を制御。
+  array_unshift($form['#submit'], 'tfa_custom_setup_form_submit');
+}
+
+/**
+ * カスタムsubmitハンドラー: TFA有効化時のメール送信制御。
+ */
+function tfa_custom_setup_form_submit(array &$form, FormStateInterface $form_state) {
+  $config = \Drupal::config('tfa_custom.settings');
+  $send_email = $config->get('send_email_on_enable') ?? TRUE;
+
+  // メール送信を無効にする場合、一時的にフラグを設定。
+  if (!$send_email) {
+    \Drupal::state()->set('tfa_custom.suppress_enable_email', TRUE);
+  }
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter() for tfa_disable_form.
+ *
+ * TFA無効化時のメール送信を制御。
+ */
+function tfa_custom_form_tfa_disable_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  // カスタムsubmitハンドラーを最初に追加してメール送信を制御。
+  array_unshift($form['#submit'], 'tfa_custom_disable_form_submit');
+}
+
+/**
+ * カスタムsubmitハンドラー: TFA無効化時のメール送信制御。
+ */
+function tfa_custom_disable_form_submit(array &$form, FormStateInterface $form_state) {
+  $config = \Drupal::config('tfa_custom.settings');
+  $send_email = $config->get('send_email_on_disable') ?? TRUE;
+
+  // メール送信を無効にする場合、一時的にフラグを設定。
+  if (!$send_email) {
+    \Drupal::state()->set('tfa_custom.suppress_disable_email', TRUE);
   }
 }
 
@@ -110,26 +161,21 @@ function tfa_custom_restore_redirect(array &$form, FormStateInterface $form_stat
  * TFAのメール送信を制御。
  */
 function tfa_custom_mail_alter(&$message) {
-  // TFAモジュールからのメールのみを対象とする。
-  if ($message['module'] !== 'tfa') {
-    return;
-  }
-
-  $config = \Drupal::config('tfa_custom.settings');
-
   // TFA有効化メールの制御。
-  if ($message['key'] === 'tfa_enabled_configuration') {
-    $send_email = $config->get('send_email_on_enable') ?? TRUE;
-    if (!$send_email) {
+  if ($message['module'] === 'tfa' && $message['key'] === 'tfa_enabled_configuration') {
+    if (\Drupal::state()->get('tfa_custom.suppress_enable_email')) {
+      // メール送信を抑制。
       $message['send'] = FALSE;
+      \Drupal::state()->delete('tfa_custom.suppress_enable_email');
     }
   }
 
   // TFA無効化メールの制御。
-  if ($message['key'] === 'tfa_disabled_configuration') {
-    $send_email = $config->get('send_email_on_disable') ?? TRUE;
-    if (!$send_email) {
+  if ($message['module'] === 'tfa' && $message['key'] === 'tfa_disabled_configuration') {
+    if (\Drupal::state()->get('tfa_custom.suppress_disable_email')) {
+      // メール送信を抑制。
       $message['send'] = FALSE;
+      \Drupal::state()->delete('tfa_custom.suppress_disable_email');
     }
   }
 }
